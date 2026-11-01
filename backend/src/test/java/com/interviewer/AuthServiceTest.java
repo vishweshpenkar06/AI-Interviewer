@@ -5,6 +5,7 @@ import com.interviewer.dto.LoginRequest;
 import com.interviewer.dto.RegisterRequest;
 import com.interviewer.entity.User;
 import com.interviewer.exception.ConflictException;
+import com.interviewer.repository.MembershipRepository;
 import com.interviewer.repository.UserRepository;
 import com.interviewer.security.JwtUtil;
 import com.interviewer.service.AuthService;
@@ -42,6 +43,9 @@ class AuthServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private MembershipRepository membershipRepository;
 
     @Mock
     private PasswordEncoder passwordEncoder;

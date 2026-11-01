@@ -1,0 +1,10 @@
+{
+  "name": "Wipro",
+  "slug": "wipro",
+  "durationMinutes": 50,
+  "questionCount": 10,
+  "difficulty": "medium",
+  "rubricWeights": { "relevance": 0.15, "technical_depth": 0.20, "correctness": 0.40, "clarity": 0.15, "evidence": 0.10 },
+  "sections": ["aptitude", "technical", "hr"],
+  "questionBankRole": "full-stack-developer"
+}

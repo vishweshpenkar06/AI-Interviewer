@@ -8,6 +8,8 @@ const VoiceRecorder = ({ onTranscript, onRecordingChange, disabled = false }) =>
   const [interimTranscript, setInterimTranscript] = useState('')
   const [error, setError] = useState(null)
   const [audioLevel, setAudioLevel] = useState(0)
+  const [provider, setProvider] = useState(null)
+  const [confidence, setConfidence] = useState(null)
 
   const mediaRecorderRef = useRef(null)
   const audioContextRef = useRef(null)
@@ -196,15 +198,53 @@ const VoiceRecorder = ({ onTranscript, onRecordingChange, disabled = false }) =>
         body: formData,
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        if (data.transcript) {
-          setTranscript(data.transcript)
-          onTranscript?.(data.transcript, true)
-        }
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setError(data.message || 'Transcription failed. You can upload a clip or type your answer.')
+        return
+      }
+      setProvider(data.provider || null)
+      setConfidence(typeof data.confidence === 'number' ? data.confidence : null)
+      if (data.transcript) {
+        setTranscript(data.transcript)
+        onTranscript?.(data.transcript, true)
+      } else if (data.error) {
+        setError(data.error)
       }
     } catch (err) {
       console.error('Transcription error:', err)
+      setError('Transcription failed. You can type your answer instead.')
+    }
+  }
+
+  const uploadFile = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setError(null)
+    try {
+      const formData = new FormData()
+      formData.append('audio', file, file.name || 'recording.webm')
+      const response = await fetch(`${API_BASE}/voice/transcribe`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        body: formData,
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setError(data.message || 'Could not transcribe that file.')
+        return
+      }
+      if (data.transcript) {
+        setTranscript(data.transcript)
+        onTranscript?.(data.transcript, true)
+        setProvider(data.provider || 'upload')
+        setConfidence(typeof data.confidence === 'number' ? data.confidence : null)
+      } else {
+        setError(data.error || 'No speech was detected in that file.')
+      }
+    } catch (err) {
+      console.error('Upload transcription error:', err)
+      setError('Could not upload that audio file.')
     }
   }
 
@@ -276,6 +316,20 @@ const VoiceRecorder = ({ onTranscript, onRecordingChange, disabled = false }) =>
           )}
         </div>
       </div>
+
+      {!isRecording && (
+        <label className="inline-flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'rgba(255,255,255,.66)' }}>
+          <span className="underline">No microphone? Upload an audio clip</span>
+          <input type="file" accept="audio/*" className="hidden" onChange={uploadFile} disabled={disabled} />
+        </label>
+      )}
+
+      {provider && (
+        <p className="text-xs" style={{ color: 'rgba(255,255,255,.55)' }}>
+          Transcribed with {provider}
+          {confidence != null ? ` · ${Math.round(confidence * 100)}% confidence` : ''}
+        </p>
+      )}
 
       {(transcript || interimTranscript) && (
         <div className="p-4 bg-ink-50 rounded-xl border border-ink-200">

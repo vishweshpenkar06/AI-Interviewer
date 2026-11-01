@@ -33,6 +33,8 @@ public class InterviewService {
     private final UserRepository userRepository;
     private final EvaluationRepository evaluationRepository;
     private final ReportRepository reportRepository;
+    private final AssignmentAttemptRepository assignmentAttemptRepository;
+    private final TenantContext tenantContext;
     private final AiServiceClient aiServiceClient;
     private final QuestionBankService questionBankService;
     private final ObjectMapper objectMapper;
@@ -78,6 +80,7 @@ public class InterviewService {
 
         Interview interview = Interview.builder()
                 .candidate(user)
+                .organizationId(tenantContext.currentOrganizationId())
                 .jobDescription(jd)
                 .resume(resume)
                 .title(request.getTitle())
@@ -328,16 +331,74 @@ public class InterviewService {
             session.setAiFollowUp(followUp);
         }
 
-        applyEvaluation(session, evalFuture.join());
+        Map<String, Object> result = evalFuture.join();
+        int score = applyTrackWeights(result, weightsFor(interview));
+        applyEvaluation(session, result, score);
     }
 
-    private void applyEvaluation(InterviewSession session, Map<String, Object> evalResult) {
+    /**
+     * The track may weight criteria differently from the default rubric. The
+     * per-criterion scores (already evidence-capped by the rubric) are weighted
+     * here so a TCS NQT attempt and a Product SDE attempt score honestly.
+     */
+    private int applyTrackWeights(Map<String, Object> evalResult, Map<String, Double> weights) {
+        if (evalResult == null || evalResult.get("skill_scores") == null || weights == null) {
+            return evalResult != null && evalResult.get("score") != null
+                    ? ((Number) evalResult.get("score")).intValue() : 0;
+        }
+        Object raw = evalResult.get("skill_scores");
+        if (!(raw instanceof Map<?, ?> skills)) {
+            return ((Number) evalResult.getOrDefault("score", 0)).intValue();
+        }
+        double total = 0;
+        double weightSum = 0;
+        for (Map.Entry<String, Double> entry : weights.entrySet()) {
+            String key = "technical_depth".equals(entry.getKey()) ? "technicalDepth" : entry.getKey();
+            Object value = skills.get(key);
+            if (value instanceof Number number) {
+                total += entry.getValue() * number.doubleValue();
+                weightSum += entry.getValue();
+            }
+        }
+        if (weightSum <= 0) {
+            return ((Number) evalResult.getOrDefault("score", 0)).intValue();
+        }
+        int score = (int) Math.round(total / weightSum);
+        evalResult.put("score", score);
+        evalResult.put("grade", gradeFor(score));
+        return score;
+    }
+
+    private Map<String, Double> weightsFor(Interview interview) {
+        if (interview.getInterviewConfig() == null || interview.getInterviewConfig().isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode config = objectMapper.readTree(interview.getInterviewConfig());
+            JsonNode weights = config.get("rubricWeights");
+            if (weights == null || !weights.isObject()) {
+                return null;
+            }
+            Map<String, Double> parsed = new LinkedHashMap<>();
+            weights.fields().forEachRemaining(field -> {
+                if (field.getValue().isNumber()) {
+                    parsed.put(field.getKey(), field.getValue().asDouble());
+                }
+            });
+            double sum = parsed.values().stream().mapToDouble(Double::doubleValue).sum();
+            return Math.abs(sum - 1.0) <= 0.01 && parsed.size() == 5 ? parsed : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void applyEvaluation(InterviewSession session, Map<String, Object> evalResult, int computedScore) {
         if (evalResult == null || evalResult.isEmpty() || evalResult.get("score") == null) {
             return;
         }
         Evaluation evaluation = Evaluation.builder()
                 .session(session)
-                .score(((Number) evalResult.get("score")).intValue())
+                .score(computedScore)
                 .grade((String) evalResult.getOrDefault("grade", "F"))
                 .feedback((String) evalResult.getOrDefault("feedback", ""))
                 .skillScores(evalResult.get("skill_scores") != null ? toJson(evalResult.get("skill_scores")) : null)
@@ -416,6 +477,7 @@ public class InterviewService {
 
         Report report = Report.builder()
                 .interview(interview)
+                .organizationId(interview.getOrganizationId())
                 .overallScore(overallScore)
                 .overallGrade(overallGrade)
                 .summary(summary)
@@ -534,6 +596,12 @@ public class InterviewService {
         interview = interviewRepository.save(interview);
 
         generateReportForInterview(interview);
+
+        assignmentAttemptRepository.findByInterviewId(interview.getId()).ifPresent(attempt -> {
+            attempt.setStatus(AssignmentAttempt.Status.COMPLETED);
+            attempt.setCompletedAt(LocalDateTime.now());
+            assignmentAttemptRepository.save(attempt);
+        });
 
         return mapToInterviewResponse(interview);
     }

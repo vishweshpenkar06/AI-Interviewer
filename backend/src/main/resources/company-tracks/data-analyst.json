@@ -1,0 +1,10 @@
+{
+  "name": "Data Analyst",
+  "slug": "data-analyst",
+  "durationMinutes": 45,
+  "questionCount": 8,
+  "difficulty": "medium",
+  "rubricWeights": { "relevance": 0.15, "technical_depth": 0.25, "correctness": 0.30, "clarity": 0.20, "evidence": 0.10 },
+  "sections": ["aptitude", "technical", "sql", "hr"],
+  "questionBankRole": "data-analyst"
+}

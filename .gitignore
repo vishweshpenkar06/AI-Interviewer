@@ -99,3 +99,7 @@ strix/
 
 # Browser MCP artifacts
 .playwright-mcp/
+
+# Local AI model cache and Python venv
+ai-service/.cache/
+ai-service/.venv/

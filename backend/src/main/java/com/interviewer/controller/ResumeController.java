@@ -39,6 +39,7 @@ public class ResumeController {
     private final UserRepository userRepository;
     private final AiServiceClient aiServiceClient;
     private final CurrentUser currentUser;
+    private final com.interviewer.service.TenantContext tenantContext;
     private final ObjectMapper objectMapper;
 
     @Value("${app.upload.dir:./uploads}")
@@ -61,6 +62,7 @@ public class ResumeController {
 
         Resume resume = Resume.builder()
                 .user(user)
+                .organizationId(tenantContext.currentOrganizationId())
                 .fileName(sanitizeFileName(file.getOriginalFilename()))
                 .fileType(file.getContentType())
                 .fileSize(String.valueOf(file.getSize()))
@@ -130,6 +132,7 @@ public class ResumeController {
 
         Resume resume = Resume.builder()
                 .user(user)
+                .organizationId(tenantContext.currentOrganizationId())
                 .fileName(requestedName == null || requestedName.isBlank()
                         ? "pasted-resume.txt" : sanitizeFileName(requestedName))
                 .filePath("pasted")

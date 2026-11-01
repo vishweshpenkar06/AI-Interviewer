@@ -26,3 +26,23 @@ jobs:
 
       - name: Syntax check
         run: python -m py_compile main.py
+
+  ai-eval:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: ai-service/requirements.txt
+      # The smoke eval only needs the rubric's core deps; skip the heavy
+      # optional Whisper wheel in this job.
+      - run: pip install pydantic python-dotenv
+      - name: Grounding + bias smoke eval
+        run: python eval/run_eval.py --smoke --provider offline --out /tmp/eval-report.md
+      - name: Show report
+        run: cat /tmp/eval-report.md

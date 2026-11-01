@@ -42,6 +42,9 @@ services:
       AI_SERVICE_URL: http://ai:8001
       AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?set AI_SERVICE_TOKEN in .env}
       AI_SERVICE_TIMEOUT_MS: "120000"
+      PISTON_URL: http://piston:2000
+      RECORDINGS_DIR: /app/uploads/recordings
+      RETENTION_DRY_RUN: "true"
       APP_CORS_ALLOWED_ORIGINS: https://${APP_DOMAIN}
       FRONTEND_URL: https://${APP_DOMAIN}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -68,10 +71,25 @@ services:
       LLM_MODEL: ${LLM_MODEL:-gemini-3.5-flash-lite}
       LLM_API_KEY: ${LLM_API_KEY:?set LLM_API_KEY in .env}
       TTS_PROVIDER: edge
-      STT_PROVIDER: mock
+      # No paid STT key: faster-whisper runs locally; the model downloads on
+      # first use. Use WHISPER_MODEL=base on a small CPU-only VM.
+      STT_PROVIDER: auto
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      WHISPER_CACHE: /app/.cache/whisper
       AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN}
       ALLOWED_ORIGINS: https://${APP_DOMAIN}
       PORT: "8001"
+    volumes:
+      - whisper_cache:/app/.cache/whisper
+    networks: [internal]
+
+  piston:
+    image: ghcr.io/engineer-man/piston
+    restart: unless-stopped
+    # The sandbox has no outbound network; install language packs explicitly
+    # (see PISTON_URL in DEPLOY.md) before relying on a language.
+    tmpfs:
+      - /piston/jobs
     networks: [internal]
 
   frontend:
@@ -106,6 +124,7 @@ services:
 volumes:
   db_data:
   uploads:
+  whisper_cache:
   caddy_data:
   caddy_config:
 

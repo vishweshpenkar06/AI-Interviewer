@@ -14,4 +14,7 @@ public class ProfileResponse {
     String linkedinUrl;
     String githubUrl;
     String role;
+    Boolean consentRecording;
+    Boolean consentProctoring;
+    Integer dataRetentionDays;
 }

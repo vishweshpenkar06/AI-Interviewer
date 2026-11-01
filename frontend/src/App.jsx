@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import { AuthProvider, useAuth } from './context/AuthContext'
 import ProtectedRoute from './components/common/ProtectedRoute'
 import ErrorBoundary from './components/common/ErrorBoundary'
+import TpoRoute from './components/tpo/TpoRoute'
 import { UIChrome, UIPage } from './v2/UISwitch'
 
 const Landing = lazy(() => import('./pages/Landing'))
@@ -30,6 +31,10 @@ const StudioReport = lazy(() => import('./v2/pages/ReportStudio'))
 const StudioLibrary = lazy(() => import('./v2/pages/Library'))
 const StudioSettings = lazy(() => import('./v2/pages/Settings'))
 const StudioAuth = lazy(() => import('./v2/pages/Auth'))
+const TpoDashboard = lazy(() => import('./pages/tpo/Dashboard'))
+const TpoCohortDetail = lazy(() => import('./pages/tpo/CohortDetail'))
+const TpoAssignmentBuilder = lazy(() => import('./pages/tpo/AssignmentBuilder'))
+const Pricing = lazy(() => import('./pages/Pricing'))
 
 function AppRoutes() {
   const { user, loading } = useAuth()
@@ -54,6 +59,7 @@ function AppRoutes() {
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/terms" element={<Terms />} />
       <Route path="/cookies" element={<Cookies />} />
+      <Route path="/pricing" element={<Pricing />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route
         path="/"
@@ -78,6 +84,15 @@ function AppRoutes() {
             <Route path="resume-builder" element={<ResumeBuilder />} />
             <Route path="practice" element={<UIPage classic={<Practice />} studio={<Practice />} />} />
             <Route path="profile" element={<UIPage classic={<Profile />} studio={<StudioSettings />} />} />
+            <Route path="tpo" element={<TpoDashboard />} />
+            <Route
+              path="tpo/cohorts/:orgId/:cohortId"
+              element={<TpoRoute><TpoCohortDetail /></TpoRoute>}
+            />
+            <Route
+              path="tpo/assignments/new"
+              element={<TpoRoute><TpoAssignmentBuilder /></TpoRoute>}
+            />
           </>
         )}
       </Route>

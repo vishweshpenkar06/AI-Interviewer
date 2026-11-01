@@ -488,13 +488,23 @@ const CodingEnvironment = ({ problem, onSubmit, timeLimit = 30 }) => {
                     Execution time: {output.time}s | Memory: {output.memory} KB
                   </div>
                 )}
+                {output.provider && (
+                  <div className="text-gray-500 text-xs mt-1">
+                    Provider: {output.provider}
+                  </div>
+                )}
               </div>
             )}
 
             {/* Test Results */}
             {testResults.length > 0 && (
               <div className="mt-3 border-t border-gray-700 pt-3">
-                <span className="text-gray-300 text-xs">Test Results:</span>
+                <span className="text-gray-300 text-xs">
+                  Test Results:
+                  {testResults[0]?.provider && (
+                    <span className="text-gray-500"> executed via {testResults[0].provider}</span>
+                  )}
+                </span>
                 <div className="mt-2 space-y-1">
                   {testResults.map((result, idx) => (
                     <div key={idx} className="text-xs">

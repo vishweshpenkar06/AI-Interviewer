@@ -195,8 +195,21 @@ async def generate_report(request: ReportGenerationRequest):
 async def transcribe_audio(audio: UploadFile = File(...)):
     try:
         audio_data = await audio.read()
-        transcript = await voice_service.transcribe(audio_data)
-        return {"transcript": transcript, "confidence": 0.95, "language": "en-US"}
+        if not audio_data:
+            raise HTTPException(status_code=400, detail="Empty audio upload")
+        if len(audio_data) > 25 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Audio must be smaller than 25 MB")
+        result = await voice_service.transcribe(audio_data)
+        return {
+            "transcript": result.get("transcript", ""),
+            "language": result.get("language", "en"),
+            "duration": result.get("duration", 0.0),
+            "provider": result.get("provider", "mock"),
+            "confidence": result.get("confidence", 0.0),
+            **({"error": result["error"]} if result.get("error") else {}),
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise _internal_error(e)
 

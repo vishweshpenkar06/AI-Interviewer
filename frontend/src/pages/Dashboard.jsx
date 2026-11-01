@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
-import api from '../services/api'
-import { Plus, Clock, CheckCircle, XCircle, TrendingUp, BarChart3, Brain, Flame } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import api, { errorMessage } from '../services/api'
+import { Plus, Clock, CheckCircle, XCircle, TrendingUp, BarChart3, Brain, Flame, Building2, ClipboardList } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { GlassCard, WhiteButton, GlassBadge, BackgroundVideo } from '../components/ui/glass'
 import { useAuth } from '../context/AuthContext'
@@ -10,11 +10,48 @@ import { currentStreak, sessionsThisWeek } from '../utils/progressStats'
 
 const Dashboard = () => {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [interviews, setInterviews] = useState([])
+  const [assigned, setAssigned] = useState([])
+  const [memberships, setMemberships] = useState([])
+  const [startingId, setStartingId] = useState(null)
+  const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
   const [dueCount, setDueCount] = useState(0)
 
   useEffect(() => { fetchInterviews() }, [])
+
+  useEffect(() => {
+    let alive = true
+    api.get('/me/assignments')
+      .then(({ data }) => { if (alive) setAssigned(data || []) })
+      .catch(() => {})
+    api.get('/me/organizations')
+      .then(({ data }) => { if (alive) setMemberships(data || []) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+
+  const isTpo = memberships.some((org) => ['TPO', 'ADMIN'].includes(org.role))
+
+  const startAssignment = async (assignment) => {
+    setStartingId(assignment.assignmentId)
+    setError(null)
+    try {
+      if (assignment.interviewId && assignment.status === 'IN_PROGRESS') {
+        navigate(`/interview/${assignment.interviewId}`)
+        return
+      }
+      const { data } = await api.post(
+        `/orgs/${assignment.organizationId}/assignments/${assignment.assignmentId}/start`,
+      )
+      navigate(`/interview/${data.interviewId}`)
+    } catch (err) {
+      setError(errorMessage(err, 'Could not start this assigned interview.'))
+    } finally {
+      setStartingId(null)
+    }
+  }
 
   useEffect(() => {
     let alive = true
@@ -89,7 +126,22 @@ const Dashboard = () => {
               </p>
             )}
           </motion.div>
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.2 }}>
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.2 }} className="flex flex-wrap items-center gap-3">
+            {isTpo ? (
+              <Link to="/tpo">
+                <button className="px-4 py-2.5 rounded-xl text-sm inline-flex items-center gap-2"
+                  style={{ background: 'rgba(251,191,36,.1)', border: '1px solid rgba(251,191,36,.28)', color: '#fbbf24' }}>
+                  <Building2 className="h-4 w-4" /> TPO mode
+                </button>
+              </Link>
+            ) : memberships.length === 0 ? (
+              <Link to="/tpo">
+                <button className="px-4 py-2.5 rounded-xl text-sm inline-flex items-center gap-2"
+                  style={{ background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.14)', color: 'rgba(255,255,255,.8)' }}>
+                  <Building2 className="h-4 w-4" /> Set up placement cell
+                </button>
+              </Link>
+            ) : null}
             <Link to="/interview/new">
               <WhiteButton className="px-5 py-2.5 flex items-center gap-2 text-sm">
                 <Plus className="h-4 w-4" /> New Interview
@@ -97,6 +149,61 @@ const Dashboard = () => {
             </Link>
           </motion.div>
         </div>
+
+        {error && (
+          <div role="alert" className="mb-5 p-3 rounded-xl text-sm" style={{ background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.25)', color: '#fca5a5' }}>
+            {error}
+          </div>
+        )}
+
+        {assigned.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-lg font-semibold mb-3 inline-flex items-center gap-2" style={{ color: '#fff' }}>
+              <ClipboardList className="h-4 w-4" /> Assigned interviews
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {assigned.map((assignment) => (
+                <GlassCard key={`${assignment.organizationId}-${assignment.assignmentId}`} className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-semibold truncate" style={{ color: '#fff' }}>{assignment.title}</h3>
+                      <p className="text-xs mt-1 truncate" style={{ color: 'rgba(255,255,255,.66)' }}>
+                        {assignment.organizationName} · {assignment.trackName}
+                      </p>
+                    </div>
+                    <GlassBadge variant={assignment.status === 'COMPLETED' ? 'success' : 'warning'}>
+                      {assignment.status.replace('_', ' ')}
+                    </GlassBadge>
+                  </div>
+                  <p className="text-xs mt-3" style={{ color: 'rgba(255,255,255,.58)' }}>
+                    {assignment.attemptsUsed}/{assignment.maxAttempts} attempts
+                    {assignment.dueAt ? ` · due ${new Date(assignment.dueAt).toLocaleDateString()}` : ''}
+                    {typeof assignment.score === 'number' ? ` · score ${assignment.score}` : ''}
+                  </p>
+                  <div className="mt-4">
+                    {assignment.status === 'COMPLETED' && assignment.interviewId ? (
+                      <Link to={`/report/${assignment.interviewId}`} className="text-sm" style={{ color: '#a5b4fc' }}>
+                        View report →
+                      </Link>
+                    ) : assignment.canStart || assignment.status === 'IN_PROGRESS' ? (
+                      <WhiteButton
+                        className="px-4 py-2 text-sm"
+                        disabled={startingId === assignment.assignmentId}
+                        onClick={() => startAssignment(assignment)}
+                      >
+                        {startingId === assignment.assignmentId
+                          ? 'Starting…'
+                          : assignment.status === 'IN_PROGRESS' ? 'Resume' : 'Start'}
+                      </WhiteButton>
+                    ) : (
+                      <span className="text-xs" style={{ color: 'rgba(255,255,255,.5)' }}>No attempts left</span>
+                    )}
+                  </div>
+                </GlassCard>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Spaced repetition */}
         {dueCount > 0 && (

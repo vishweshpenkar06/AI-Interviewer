@@ -457,3 +457,45 @@ of returning a default.
 multi-prompt path) or `heuristic` (no LLM key or the model failed). Only `rubric`
 is measured; see [bench/RESULTS.md](../bench/RESULTS.md) for the current numbers
 and their limits.
+
+## PlacementOS endpoints (multi-tenant)
+
+All org-scoped routes require a JWT. The path `orgId` is validated against a
+`Membership` row; TPO routes additionally require the TPO or ADMIN role. The
+`X-Organization-Id` header is accepted and validated by `TenantContext`, but the
+path is authoritative.
+
+| Method | Path | Role |
+|---|---|---|
+| POST | `/api/orgs` | any authenticated user (creator becomes ADMIN) |
+| GET | `/api/orgs/{orgId}` | member |
+| GET | `/api/orgs/{orgId}/tracks` | member |
+| GET | `/api/orgs/{orgId}/analytics` | TPO/ADMIN |
+| GET | `/api/orgs/{orgId}/usage` | member |
+| GET | `/api/orgs/{orgId}/reports/export` | TPO/ADMIN |
+| POST/GET | `/api/orgs/{orgId}/cohorts` | TPO/ADMIN |
+| POST | `/api/orgs/{orgId}/cohorts/{cohortId}/students/import` | TPO/ADMIN, multipart `file` |
+| GET | `/api/orgs/{orgId}/cohorts/{cohortId}/students` | TPO/ADMIN |
+| POST/GET | `/api/orgs/{orgId}/assignments` | TPO/ADMIN |
+| GET | `/api/me/assignments` | student |
+| POST | `/api/orgs/{orgId}/assignments/{assignmentId}/start` | student member |
+| GET | `/api/me/organizations` | any authenticated |
+| GET/DELETE | `/api/me/data` | any authenticated |
+| GET/POST | `/api/me/consent` | any authenticated |
+
+### CSV format
+
+```csv
+fullName,email,phone,department,graduationYear
+Asha Rao,asha@example.com,9876543210,CSE,2027
+```
+
+Response: `{ "created": 2, "skipped": 1, "errors": ["row 4: invalid email: ..."], "students": [...] }`.
+
+### Track config
+
+`GET /api/orgs/{orgId}/tracks` returns the 5 seeded global tracks (TCS NQT,
+Infosys, Wipro, Product SDE, Data Analyst) with their parsed `config`:
+`durationMinutes`, `questionCount`, `difficulty`, `sections`, and
+`rubricWeights` (which must sum to 1.0). Assignment start copies the config into
+`Interview.interviewConfig`.

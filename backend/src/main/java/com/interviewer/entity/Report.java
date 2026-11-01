@@ -23,6 +23,9 @@ public class Report {
     @JoinColumn(name = "interview_id", nullable = false)
     private Interview interview;
 
+    @Column(name = "organization_id")
+    private Long organizationId;
+
     @Column(nullable = false)
     private Integer overallScore;
 

@@ -1,0 +1,10 @@
+{
+  "name": "Product SDE",
+  "slug": "product-sde",
+  "durationMinutes": 75,
+  "questionCount": 10,
+  "difficulty": "hard",
+  "rubricWeights": { "relevance": 0.10, "technical_depth": 0.35, "correctness": 0.30, "clarity": 0.15, "evidence": 0.10 },
+  "sections": ["technical", "system_design", "coding"],
+  "questionBankRole": "full-stack-developer"
+}

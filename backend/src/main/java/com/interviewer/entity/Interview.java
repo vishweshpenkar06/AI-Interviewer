@@ -33,6 +33,10 @@ public class Interview {
     @JoinColumn(name = "resume_id")
     private Resume resume;
 
+    /** Null for legacy single-user interviews; set for every org-scoped interview. */
+    @Column(name = "organization_id")
+    private Long organizationId;
+
     @Column(nullable = false, length = 200)
     private String title;
 

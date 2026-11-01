@@ -19,6 +19,7 @@ public class JobDescriptionService {
 
     private final JobDescriptionRepository jobDescriptionRepository;
     private final UserRepository userRepository;
+    private final TenantContext tenantContext;
 
     @Transactional
     public JobDescriptionResponse create(Long userId, JobDescriptionRequest request) {
@@ -35,6 +36,7 @@ public class JobDescriptionService {
 
         JobDescription jd = JobDescription.builder()
                 .createdBy(user)
+                .organizationId(tenantContext.currentOrganizationId())
                 .title(request.getTitle())
                 .company(request.getCompany())
                 .description(request.getDescription())

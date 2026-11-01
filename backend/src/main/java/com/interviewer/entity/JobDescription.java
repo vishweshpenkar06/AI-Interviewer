@@ -24,6 +24,9 @@ public class JobDescription {
     @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;
 
+    @Column(name = "organization_id")
+    private Long organizationId;
+
     @Column(nullable = false, length = 200)
     private String title;
 

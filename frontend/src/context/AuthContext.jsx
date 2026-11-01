@@ -49,6 +49,9 @@ export const AuthProvider = ({ children }) => {
       const { token, ...userData } = response.data
       localStorage.setItem('token', token)
       localStorage.setItem('user', JSON.stringify(userData))
+      if (userData.organizationId) {
+        localStorage.setItem('organizationId', String(userData.organizationId))
+      }
       setUser(userData)
       perfEnd('auth.login', startedAt, { ok: true })
       return userData
@@ -69,6 +72,9 @@ export const AuthProvider = ({ children }) => {
       const { token, ...userData } = response.data
       localStorage.setItem('token', token)
       localStorage.setItem('user', JSON.stringify(userData))
+      if (userData.organizationId) {
+        localStorage.setItem('organizationId', String(userData.organizationId))
+      }
       setUser(userData)
       perfEnd('auth.register', startedAt, { ok: true })
       return userData
@@ -85,6 +91,15 @@ export const AuthProvider = ({ children }) => {
     try {
       const { data } = await api.get('/users/profile', { timeout: AUTH_REQUEST_TIMEOUT_MS })
       const userData = { userId: data.id, email: data.email, fullName: data.fullName, role: data.role }
+      try {
+        const orgs = await api.get('/me/organizations', { timeout: AUTH_REQUEST_TIMEOUT_MS })
+        if (orgs.data?.length) {
+          userData.organizationId = orgs.data[0].id
+          localStorage.setItem('organizationId', String(orgs.data[0].id))
+        }
+      } catch {
+        // Organisations are optional for the classic single-user flow.
+      }
       localStorage.setItem('user', JSON.stringify(userData))
       setUser(userData)
       perfEnd('auth.google-callback', startedAt, { ok: true })
@@ -101,14 +116,30 @@ export const AuthProvider = ({ children }) => {
   const logout = useCallback(() => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
+    localStorage.removeItem('organizationId')
     setUser(null)
+  }, [])
+
+  /** Switches the tenant used by X-Organization-Id for subsequent requests. */
+  const selectOrganization = useCallback((organizationId) => {
+    if (organizationId) {
+      localStorage.setItem('organizationId', String(organizationId))
+    } else {
+      localStorage.removeItem('organizationId')
+    }
+    setUser((previous) => {
+      if (!previous) return previous
+      const next = { ...previous, organizationId: organizationId || null }
+      localStorage.setItem('user', JSON.stringify(next))
+      return next
+    })
   }, [])
 
   // Stable context value: consumers only re-render when the session changes,
   // not whenever the provider happens to render.
   const value = useMemo(
-    () => ({ user, loading, login, register, loginWithToken, logout }),
-    [user, loading, login, register, loginWithToken, logout],
+    () => ({ user, loading, login, register, loginWithToken, logout, selectOrganization }),
+    [user, loading, login, register, loginWithToken, logout, selectOrganization],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

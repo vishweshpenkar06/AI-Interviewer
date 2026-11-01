@@ -28,6 +28,12 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  // PlacementOS: the backend validates this against a membership row; it is
+  // never trusted on its own.
+  const organizationId = localStorage.getItem('organizationId')
+  if (organizationId) {
+    config.headers['X-Organization-Id'] = organizationId
+  }
   return config
 })
 
@@ -41,6 +47,7 @@ api.interceptors.response.use(
     if (status === 401 && Boolean(error.config?.headers?.Authorization)) {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
+      localStorage.removeItem('organizationId')
       const returnTo = `${window.location.pathname}${window.location.search}`
       window.location.href = `/login?returnTo=${encodeURIComponent(returnTo)}`
     }

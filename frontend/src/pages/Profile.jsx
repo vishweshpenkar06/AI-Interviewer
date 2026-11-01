@@ -53,6 +53,35 @@ const Profile = () => {
     { id: 'about', label: 'About', icon: Info },
   ]
 
+  const exportMyData = async () => {
+    try {
+      const { data } = await api.get('/me/data')
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'placementos-my-data.json'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      setSuccess('Could not export your data. Please retry.')
+    }
+  }
+
+  const deleteMyData = async () => {
+    if (!window.confirm('Delete your interviews, recordings and resumes? Your account stays, but this cannot be undone.')) {
+      return
+    }
+    try {
+      await api.delete('/me/data')
+      setSuccess('Your interviews, recordings and resumes were deleted.')
+    } catch {
+      setSuccess('Could not delete your data. Please retry.')
+    }
+  }
+
   const handleSave = async () => {
     setSaving(true)
     try {
@@ -258,6 +287,27 @@ const Profile = () => {
                       </button>
                     </div>
                   ))}
+
+                  <div className="pt-4 mt-2" style={{ borderTop: '1px solid rgba(255,255,255,.08)' }}>
+                    <p className="text-sm font-medium mb-1" style={{ color: '#fff' }}>Your data</p>
+                    <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,.66)' }}>
+                      Recording and proctoring consent is asked before each interview. Export or delete your data here.
+                    </p>
+                    <div className="flex flex-wrap gap-3">
+                      <button onClick={exportMyData} className="text-xs px-3 py-1.5 rounded-lg"
+                        style={{ background: 'rgba(255,255,255,.06)', color: '#fff', border: '1px solid rgba(255,255,255,.14)' }}>
+                        Download my data
+                      </button>
+                      <button onClick={deleteMyData} className="text-xs px-3 py-1.5 rounded-lg"
+                        style={{ background: 'rgba(248,113,113,.1)', color: '#f87171', border: '1px solid rgba(248,113,113,.2)' }}>
+                        Delete interviews and recordings
+                      </button>
+                      <Link to="/privacy" className="text-xs px-3 py-1.5 rounded-lg"
+                        style={{ color: '#a5b4fc' }}>
+                        Privacy policy
+                      </Link>
+                    </div>
+                  </div>
                 </div>
               </GlassCard>
             )}

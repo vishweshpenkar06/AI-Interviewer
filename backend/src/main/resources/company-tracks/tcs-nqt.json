@@ -1,0 +1,10 @@
+{
+  "name": "TCS NQT",
+  "slug": "tcs-nqt",
+  "durationMinutes": 60,
+  "questionCount": 10,
+  "difficulty": "medium",
+  "rubricWeights": { "relevance": 0.15, "technical_depth": 0.25, "correctness": 0.35, "clarity": 0.15, "evidence": 0.10 },
+  "sections": ["aptitude", "technical", "hr"],
+  "questionBankRole": "backend-developer"
+}

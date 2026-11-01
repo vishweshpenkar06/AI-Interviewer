@@ -4,6 +4,7 @@ import com.interviewer.dto.AuthResponse;
 import com.interviewer.dto.LoginRequest;
 import com.interviewer.dto.RegisterRequest;
 import com.interviewer.entity.User;
+import com.interviewer.repository.MembershipRepository;
 import com.interviewer.repository.UserRepository;
 import com.interviewer.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ import java.util.Map;
 public class AuthService {
 
     private final UserRepository userRepository;
+    private final MembershipRepository membershipRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final AuthenticationManager authenticationManager;
@@ -101,6 +103,14 @@ public class AuthService {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", user.getId());
         claims.put("role", user.getRole().name());
+        // A user may belong to several organisations; the claim is a default hint.
+        // TenantContext still validates every request against the membership row.
+        Long organizationId = membershipRepository.findFirstByUserIdOrderByIdAsc(user.getId())
+                .map(m -> m.getOrganization().getId())
+                .orElse(null);
+        if (organizationId != null) {
+            claims.put("organizationId", organizationId);
+        }
 
         String token = jwtUtil.generateToken(user.getEmail(), claims);
 
@@ -111,6 +121,7 @@ public class AuthService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .role(user.getRole().name())
+                .organizationId(organizationId)
                 .build();
     }
 }

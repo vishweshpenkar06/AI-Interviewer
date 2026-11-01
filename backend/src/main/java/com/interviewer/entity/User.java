@@ -51,6 +51,20 @@ public class User {
     @Builder.Default
     private Boolean active = true;
 
+    // Defaults are in the DDL so MySQL/TiDB can add these columns to a table
+    // that already has rows without a manual backfill.
+    @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT FALSE")
+    @Builder.Default
+    private Boolean consentRecording = false;
+
+    @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT FALSE")
+    @Builder.Default
+    private Boolean consentProctoring = false;
+
+    @Column(nullable = false, columnDefinition = "INTEGER DEFAULT 30")
+    @Builder.Default
+    private Integer dataRetentionDays = 30;
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;

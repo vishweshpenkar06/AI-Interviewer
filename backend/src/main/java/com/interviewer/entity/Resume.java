@@ -22,6 +22,9 @@ public class Resume {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @Column(name = "organization_id")
+    private Long organizationId;
+
     @Column(nullable = false, length = 255)
     private String fileName;
 

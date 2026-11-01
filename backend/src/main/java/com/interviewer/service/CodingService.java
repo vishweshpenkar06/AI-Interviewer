@@ -9,6 +9,12 @@ import org.springframework.web.client.RestTemplate;
 import java.util.*;
 import java.util.concurrent.*;
 
+/**
+ * Execution provider chain: Judge0 (when configured and reachable) →
+ * self-hosted Piston (free) → an explicit "execution unavailable" result.
+ * The UI can tell which provider ran the code, and failures never look like a
+ * wrong answer.
+ */
 @Service
 public class CodingService {
 
@@ -18,6 +24,9 @@ public class CodingService {
     @Value("${judge0.api.key:}")
     private String judge0ApiKey;
 
+    @Value("${piston.url:http://localhost:2000}")
+    private String pistonUrl;
+
     private final RestTemplate restTemplate;
 
     public CodingService() {
@@ -26,7 +35,17 @@ public class CodingService {
         factory.setReadTimeout(30000);
         this.restTemplate = new RestTemplate(factory);
     }
+
     private final ExecutorService executor = Executors.newFixedThreadPool(4);
+    private final Map<String, String> pistonVersions = new ConcurrentHashMap<>();
+
+    private static final Map<Integer, String> PISTON_LANGUAGES = Map.of(
+            71, "python", 62, "java", 63, "javascript", 54, "c++", 50, "c",
+            51, "csharp", 60, "go", 73, "rust", 74, "typescript");
+
+    private static final Map<Integer, String> PISTON_FILENAMES = Map.of(
+            71, "main.py", 62, "Main.java", 63, "main.js", 54, "main.cpp", 50, "main.c",
+            51, "main.cs", 60, "main.go", 73, "main.rs", 74, "main.ts");
 
     private record TestCase(String name, String stdin, String expectedOutput) {}
 
@@ -69,6 +88,30 @@ public class CodingService {
     }
 
     public Map<String, Object> executeCode(Integer languageId, String sourceCode, String stdin) {
+        Map<String, Object> judge0 = executeJudge0(languageId, sourceCode, stdin);
+        if (judge0 != null) {
+            judge0.put("provider", "judge0");
+            return judge0;
+        }
+
+        Map<String, Object> piston = executePiston(languageId, sourceCode, stdin);
+        if (piston != null) {
+            piston.put("provider", "piston");
+            return piston;
+        }
+
+        Map<String, Object> unavailable = new LinkedHashMap<>();
+        unavailable.put("provider", "none");
+        unavailable.put("status", Map.of("description", "Execution unavailable"));
+        unavailable.put("stdout", "");
+        unavailable.put("stderr",
+                "No code execution provider is reachable. Start Piston with "
+                        + "`docker run -p 2000:2000 ghcr.io/engineer-man/piston` and retry.");
+        return unavailable;
+    }
+
+    /** Returns null when Judge0 is unreachable or rejects the request, so the caller can fall back. */
+    private Map<String, Object> executeJudge0(Integer languageId, String sourceCode, String stdin) {
         try {
             Map<String, Object> request = new HashMap<>();
             request.put("language_id", languageId);
@@ -84,25 +127,122 @@ public class CodingService {
             }
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
-
             ResponseEntity<Map> submitResponse = restTemplate.exchange(
                 judge0Url + "/submissions?base64_encoded=false&wait=true",
                 HttpMethod.POST,
                 entity,
                 Map.class
             );
-
             if (submitResponse.getBody() != null) {
-                return submitResponse.getBody();
+                return new LinkedHashMap<>(submitResponse.getBody());
             }
         } catch (Exception e) {
-            return Map.of(
-                "status", Map.of("description", "Error"),
-                "stderr", "Code execution service unavailable: " + e.getMessage()
-            );
+            // Fall through to Piston.
+        }
+        return null;
+    }
+
+    private Map<String, Object> executePiston(Integer languageId, String sourceCode, String stdin) {
+        String language = PISTON_LANGUAGES.get(languageId);
+        if (language == null) {
+            return null;
+        }
+        try {
+            Map<String, Object> request = new LinkedHashMap<>();
+            request.put("language", language);
+            request.put("version", pistonVersion(language));
+            request.put("files", List.of(Map.of(
+                    "name", PISTON_FILENAMES.getOrDefault(languageId, "main.txt"),
+                    "content", sourceCode)));
+            request.put("stdin", stdin == null ? "" : stdin);
+            request.put("compile_timeout", 10_000);
+            request.put("run_timeout", 5_000);
+            request.put("run_memory_limit", 134_217_728);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    pistonUrl + "/api/v2/execute",
+                    HttpMethod.POST,
+                    new HttpEntity<>(request, headers),
+                    Map.class);
+
+            Map<String, Object> body = response.getBody();
+            if (body == null) {
+                return null;
+            }
+            return translatePiston(body);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Piston returns compile/run objects; this maps them onto the Judge0-ish
+     * fields the rest of the app already understands.
+     */
+    private Map<String, Object> translatePiston(Map<String, Object> body) {
+        Map<String, Object> compile = asMap(body.get("compile"));
+        Map<String, Object> run = asMap(body.get("run"));
+
+        String compileOutput = string(compile.get("stderr"));
+        String stdout = string(run.get("stdout"));
+        String stderr = string(run.get("stderr"));
+        Object code = run.get("code");
+        String signal = string(run.get("signal"));
+
+        String description = "Accepted";
+        if (!compileOutput.isBlank()) {
+            description = "Compilation Error";
+        } else if ("SIGKILL".equals(signal) || Integer.valueOf(137).equals(code)) {
+            description = "Time Limit Exceeded";
+        } else if (code instanceof Number number && number.intValue() != 0) {
+            description = "Runtime Error";
         }
 
-        return Map.of("status", Map.of("description", "Unknown error"));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("stdout", stdout);
+        result.put("stderr", stderr);
+        result.put("compile_output", compileOutput);
+        result.put("status", Map.of("description", description));
+        result.put("time", run.get("cpu_time") != null ? String.valueOf(run.get("cpu_time")) : "");
+        result.put("memory", run.get("memory") == null ? "" : String.valueOf(run.get("memory")));
+        return result;
+    }
+
+    private String pistonVersion(String language) {
+        return pistonVersions.computeIfAbsent(language, key -> {
+            try {
+                ResponseEntity<List> response =
+                        restTemplate.getForEntity(pistonUrl + "/api/v2/runtimes", List.class);
+                if (response.getBody() != null) {
+                    for (Object item : response.getBody()) {
+                        if (item instanceof Map<?, ?> runtime && key.equals(runtime.get("language"))) {
+                            Object version = runtime.get("version");
+                            if (version != null) {
+                                return version.toString();
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                // Fall back to the wildcard; older Piston builds accept it.
+            }
+            return "*";
+        });
+    }
+
+    private Map<String, Object> asMap(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach((k, v) -> result.put(String.valueOf(k), v));
+            return result;
+        }
+        return Map.of();
+    }
+
+    private String string(Object value) {
+        return value == null ? "" : value.toString();
     }
 
     public Map<String, Object> submitCode(Long problemId, Integer languageId, String language, String sourceCode) {
@@ -112,15 +252,19 @@ public class CodingService {
         boolean caseSensitive = problemTests == null || problemTests.caseSensitive();
 
         List<Map<String, Object>> testResults;
+        String provider = "none";
 
         if (testCases.isEmpty()) {
             Map<String, Object> executionResult = executeCode(languageId, sourceCode, "");
+            provider = String.valueOf(executionResult.getOrDefault("provider", "none"));
             boolean passed = executionResult.get("stdout") != null
-                && !executionResult.get("stdout").toString().isEmpty();
+                && !executionResult.get("stdout").toString().isEmpty()
+                && !"none".equals(provider);
             testResults = List.of(Map.of(
                 "passed", passed,
                 "testName", "Basic Test",
-                "error", passed ? "" : "No output produced"
+                "error", passed ? "" : "No output produced",
+                "provider", provider
             ));
         } else {
             List<Future<Map<String, Object>>> futures = new ArrayList<>();
@@ -131,11 +275,24 @@ public class CodingService {
             testResults = new ArrayList<>();
             for (Future<Map<String, Object>> future : futures) {
                 try {
-                    testResults.add(future.get(60, TimeUnit.SECONDS));
+                    Map<String, Object> result = future.get(60, TimeUnit.SECONDS);
+                    provider = String.valueOf(result.getOrDefault("provider", provider));
+                    testResults.add(result);
                 } catch (TimeoutException e) {
-                    testResults.add(Map.of("passed", false, "testName", "Test", "error", "Execution timed out"));
+                    testResults.add(Map.of("passed", false, "testName", "Test",
+                            "error", "Execution timed out", "provider", "none"));
                 } catch (Exception e) {
-                    testResults.add(Map.of("passed", false, "testName", "Test", "error", "Execution failed"));
+                    testResults.add(Map.of("passed", false, "testName", "Test",
+                            "error", "Execution failed", "provider", "none"));
+                }
+            }
+            if ("none".equals(provider)) {
+                for (Map<String, Object> result : testResults) {
+                    Object candidate = result.get("provider");
+                    if (candidate != null && !"none".equals(candidate)) {
+                        provider = String.valueOf(candidate);
+                        break;
+                    }
                 }
             }
         }
@@ -146,6 +303,7 @@ public class CodingService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("problemId", pid);
         result.put("language", language);
+        result.put("provider", provider);
         result.put("testResults", testResults);
         result.put("passedCount", passedCount);
         result.put("totalTests", testResults.size());
@@ -165,9 +323,17 @@ public class CodingService {
         String stdout = execution.get("stdout") != null ? execution.get("stdout").toString() : "";
         String stderr = execution.get("stderr") != null ? execution.get("stderr").toString() : "";
         String compileOutput = execution.get("compile_output") != null ? execution.get("compile_output").toString() : "";
+        String provider = String.valueOf(execution.getOrDefault("provider", "none"));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("testName", tc.name());
+        result.put("provider", provider);
+
+        if ("Execution unavailable".equalsIgnoreCase(statusDescription)) {
+            result.put("passed", false);
+            result.put("error", stderr.isBlank() ? "Execution unavailable" : truncate(stderr));
+            return result;
+        }
 
         if (!compileOutput.isEmpty()) {
             result.put("passed", false);

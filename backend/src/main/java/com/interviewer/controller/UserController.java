@@ -64,6 +64,9 @@ public class UserController {
                 .linkedinUrl(user.getLinkedinUrl())
                 .githubUrl(user.getGithubUrl())
                 .role(user.getRole().name())
+                .consentRecording(Boolean.TRUE.equals(user.getConsentRecording()))
+                .consentProctoring(Boolean.TRUE.equals(user.getConsentProctoring()))
+                .dataRetentionDays(user.getDataRetentionDays())
                 .build();
     }
 }

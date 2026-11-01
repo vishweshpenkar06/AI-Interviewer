@@ -2,6 +2,7 @@ package com.interviewer.service;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -22,7 +23,14 @@ public class VoiceService {
     @Value("${ai.service.token:}")
     private String aiServiceToken;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
+
+    public VoiceService() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(5000);
+        factory.setReadTimeout(60000);
+        this.restTemplate = new RestTemplate(factory);
+    }
 
     /** Same optional shared secret the AI service enforces when AI_SERVICE_TOKEN is set. */
     private HttpHeaders aiHeaders(MediaType contentType) {
@@ -35,8 +43,13 @@ public class VoiceService {
     }
 
     public String transcribeAudio(MultipartFile audioFile) {
+        return (String) transcribeAudioDetailed(audioFile).getOrDefault("transcript", "");
+    }
+
+    /** Keeps the provider, language and confidence from the AI service for the UI. */
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> transcribeAudioDetailed(MultipartFile audioFile) {
         try {
-            // Try AI service first
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("audio", audioFile.getResource());
 
@@ -51,12 +64,22 @@ public class VoiceService {
             );
 
             if (response.getBody() != null) {
-                return (String) response.getBody().get("transcript");
+                Map<String, Object> result = new HashMap<>(response.getBody());
+                result.putIfAbsent("transcript", "");
+                result.putIfAbsent("provider", "ai-service");
+                result.putIfAbsent("language", "en");
+                result.putIfAbsent("confidence", 0.0);
+                return result;
             }
         } catch (Exception e) {
-            // Fallback: return empty transcript
+            // Fallback: return an explicit error instead of inventing a transcript.
         }
-        return "";
+        return Map.of(
+                "transcript", "",
+                "provider", "unavailable",
+                "language", "en",
+                "confidence", 0.0,
+                "error", "Transcription service is unavailable");
     }
 
     public byte[] synthesizeSpeech(String text, String voice, Double rate) {

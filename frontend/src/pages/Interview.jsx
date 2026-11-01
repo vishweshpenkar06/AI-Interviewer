@@ -10,6 +10,7 @@ import ProctoringMonitor from '../components/interview/ProctoringMonitor'
 import SpeechEmotionAnalyzer from '../components/interview/SpeechEmotionAnalyzer'
 import InterviewerOrb from '../components/interview/InterviewerOrb'
 import ErrorBoundary from '../components/common/ErrorBoundary'
+import ConsentDialog from '../components/privacy/ConsentDialog'
 import AnswerInsights from '../components/interview/AnswerInsights'
 import LiveAnswerHints from '../components/interview/LiveAnswerHints'
 import EvaluationProgress from '../components/interview/EvaluationProgress'
@@ -38,6 +39,8 @@ const Interview = () => {
   const [audioStream, setAudioStream] = useState(null)
   const [bodyAnalysis, setBodyAnalysis] = useState(null)
   const [proctoringAccepted, setProctoringAccepted] = useState(false)
+  const [consent, setConsent] = useState({ consentRecording: false, consentProctoring: false })
+  const [consentOpen, setConsentOpen] = useState(false)
   const [feedback, setFeedback] = useState(null)
   const [answerSeconds, setAnswerSeconds] = useState(null)
   const [elapsed, setElapsed] = useState(0)
@@ -73,6 +76,16 @@ const Interview = () => {
       }
     }
   }, [id])
+
+  useEffect(() => {
+    api.get('/me/consent')
+      .then(({ data }) => setConsent({
+        consentRecording: Boolean(data.consentRecording),
+        consentProctoring: Boolean(data.consentProctoring),
+        dataRetentionDays: data.dataRetentionDays,
+      }))
+      .catch(() => {})
+  }, [])
 
   const fetchInterview = async () => {
     setError(null)
@@ -272,7 +285,14 @@ const Interview = () => {
             Proctoring is optional. The interview and its score work the same without it.
           </p>
           <div className="flex flex-wrap gap-3">
-            <WhiteButton onClick={() => { setProctoringAccepted(true); setShowProctoring(true) }} className="px-4 py-2 text-sm">
+            <WhiteButton
+              onClick={() => {
+                setProctoringAccepted(true)
+                setShowProctoring(true)
+                if (!consent.consentProctoring) setConsentOpen(true)
+              }}
+              className="px-4 py-2 text-sm"
+            >
               Enable proctoring
             </WhiteButton>
             <button onClick={() => { setProctoringAccepted(true); setShowProctoring(false) }}
@@ -355,12 +375,23 @@ const Interview = () => {
                 { mode: 'voice', icon: Mic, label: 'Voice' },
                 ...(isCodingQuestion ? [{ mode: 'coding', icon: Code, label: 'Code' }] : []),
               ].map(({ mode, icon: Icon, label }) => (
-                <button key={mode} onClick={() => setInputMode(mode)} className="flex items-center px-4 py-2 rounded-xl text-sm font-medium transition-all"
+                <button key={mode} onClick={() => {
+                  if (mode === 'voice' && !consent.consentRecording) {
+                    setConsentOpen(true)
+                    return
+                  }
+                  setInputMode(mode)
+                }} className="flex items-center px-4 py-2 rounded-xl text-sm font-medium transition-all"
                   style={{ background: inputMode === mode ? '#f59e0b' : 'rgba(255,255,255,.06)', color: inputMode === mode ? '#151515' : 'rgba(255,255,255,.68)', border: `1px solid ${inputMode === mode ? '#f59e0b' : 'rgba(255,255,255,.08)'}` }}>
                   <Icon className="w-4 h-4 mr-2" />{label}
                 </button>
               ))}
             </div>
+            {!consent.consentRecording && (
+              <p className="text-xs mt-3" style={{ color: 'rgba(255,255,255,.55)' }}>
+                Recording off — voice stays disabled until you grant consent.
+              </p>
+            )}
           </GlassCard>
 
           {/* Answer Input */}
@@ -438,8 +469,8 @@ const Interview = () => {
         <div className="space-y-6">
           <ErrorBoundary label="analysis-panels" compact>
             <SpeechEmotionAnalyzer audioStream={audioStream} onEmotionChange={handleEmotionChange} enabled={inputMode === 'voice'} />
-            {showBodyLanguage && <BodyLanguageAnalyzer enabled={true} onAnalysisUpdate={setBodyAnalysis} />}
-            {showProctoring && proctoringAccepted && <ProctoringMonitor onViolation={async (v) => { if (v.type === 'interview_end') { try { await api.post(`/interviews/${id}/end`) } catch (e) { console.error(e) } alert('Interview terminated.'); navigate('/') } }} enabled={showProctoring} />}
+            {showBodyLanguage && consent.consentProctoring && <BodyLanguageAnalyzer enabled={true} onAnalysisUpdate={setBodyAnalysis} />}
+            {showProctoring && proctoringAccepted && consent.consentProctoring && <ProctoringMonitor onViolation={async (v) => { if (v.type === 'interview_end') { try { await api.post(`/interviews/${id}/end`) } catch (e) { console.error(e) } alert('Interview terminated.'); navigate('/') } }} enabled={showProctoring} />}
           </ErrorBoundary>
           <GlassCard className="p-4">
             <h3 className="font-medium mb-3" style={{ color: '#fff' }}>Analysis Panels</h3>
@@ -459,6 +490,20 @@ const Interview = () => {
         </div>
       </div>
       </div>
+
+      <ConsentDialog
+        open={consentOpen}
+        initial={consent}
+        onAccepted={(data) => {
+          setConsent(data)
+          setConsentOpen(false)
+        }}
+        onDeclined={() => {
+          setConsentOpen(false)
+          setShowProctoring(false)
+          if (inputMode === 'voice') setInputMode('text')
+        }}
+      />
     </div>
   )
 }
